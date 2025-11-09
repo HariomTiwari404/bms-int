@@ -27,6 +27,35 @@ const benefits = [
   },
 ];
 
+const FUNCTIONS_BASE_URL =
+  process.env.NODE_ENV === 'development'
+    ? process.env.REACT_APP_FUNCTIONS_URL ||
+      'http://localhost:8888/.netlify/functions'
+    : '/.netlify/functions';
+
+const callNetlifyFunction = async (functionName, payload) => {
+  const response = await fetch(`${FUNCTIONS_BASE_URL}/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(data?.message || 'Request failed.');
+    if (data?.errors?.code) {
+      error.code = data.errors.code;
+    }
+    throw error;
+  }
+
+  return data;
+};
+
 const BmsSyncPage = () => {
   const navigate = useNavigate();
   const [view, setView] = useState('login');
@@ -92,33 +121,8 @@ const BmsSyncPage = () => {
     return value.replace(/.(?=.{2})/g, '*');
   };
 
-  const callBookMyShowTokenApi = async body => {
-    const response = await fetch(
-      'https://in.bookmyshow.com/api/le-diy/auth/token',
-      {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          'Content-Type': 'application/json',
-          'x-bms-le-app-code': 'DIY',
-        },
-        body: JSON.stringify(body),
-      },
-    );
-
-    if (!response.ok) {
-      const errorPayload = await response
-        .json()
-        .catch(() => ({ message: 'Request failed.' }));
-      const error = new Error(errorPayload.message || 'Request failed.');
-      if (errorPayload?.errors?.code) {
-        error.code = errorPayload.errors.code;
-      }
-      throw error;
-    }
-
-    return response.json().catch(() => ({}));
-  };
+  const callBookMyShowTokenApi = body =>
+    callNetlifyFunction('bms-token', body);
 
   const requestOtp = async () => {
     if (!isValidMobile || isSendingOtp) {
@@ -174,23 +178,9 @@ const BmsSyncPage = () => {
     setProfileFetchError('');
 
     try {
-      const response = await fetch(
-        'https://in.bookmyshow.com/api/le-diy/user/profile',
-        {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json, text/plain, */*',
-            Authorization: `Bearer ${accessToken}`,
-            'x-bms-le-app-code': 'DIY',
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error('Unable to fetch profile.');
-      }
-
-      const payload = await response.json().catch(() => ({}));
+      const payload = await callNetlifyFunction('bms-profile', {
+        accessToken,
+      });
       const profile = payload?.data || {};
       const fullName =
         [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim() ||
